@@ -15,6 +15,8 @@ trace com.hillstone.cloud.ngcv.security.service.device.image.DeviceImageUpgradeS
 ```
 
 # watch
+
+
 ```shell
 watch com.hillstone.cloud.ngcv.security.service.device.image.DeviceImageUpgradeService getDeviceImageUpgradeTasks -f -x 6 '{returnObj}' 
 ```
