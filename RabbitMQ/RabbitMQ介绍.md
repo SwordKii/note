@@ -170,7 +170,7 @@ AMQP 0-9-1 是一种消息传递协议，而不是像 JMS 这样的 API。任何
 取值范围（`String`）：
 
 - `balanced`：选择托管相同队列类型、leader副本最少的节点；
-- `client-local`：选择客户端申明队列时，连接的节点；
+- `client-local`：选择客户端申明队列时，连接的节点；默认值。
 
 > 关于队列leader节点选择方式，以及队列镜像（经典队列不要使用，推荐[仲裁队列](#仲裁队列)
 > ），可以查看[经典队列镜像](#经典队列镜像)一节。
@@ -249,16 +249,28 @@ RabbitMQ 为经典队列提供了优先级队列实现。
 仲裁队列是一种更高级的队列类型，利用副本和专注数据安全性，提供了高可用性。基于Raft一致性算法实现可持久化、可复制的FIFO队列。
 
 从RabbitMQ
-3.10开始，仲裁队列支持消息TTL，与经典镜像队列相比，提供更高的吞吐量和更稳定的延迟。经典镜像队列可以[迁移到仲裁队列](#经典队列迁移)
+3.10开始，仲裁队列支持消息TTL，与经典镜像队列相比，提供更高的吞吐量和更稳定的延迟。经典镜像队列可以[迁移到仲裁队列](#经典队列迁移到仲裁队列)
 。队列复制应该使用仲裁队列或者流，而经典队列将只提供非复制的队列类型。
 
 对于需要复制和可重复读取的情况，[流](#Stream数据结构)可能是比仲裁队列更好的选择。
+
+### 仲裁队列使用场景
+
+仲裁队列的建议副本数量是集群的仲裁数量（`(n/2) + 1`, 但不少于3个），可以通过`x-quorum-initial-group-size`指定具体数量。
+
+某些场景不适合使用仲裁队列：
+
+- 临时队列，独占队列；
+- 要求低延迟；
+- 不要求数据安全性、完整性，不使用消费者手动确认和发布者确认；
+- 队列积压非常长；
+
 
 ### 与经典队列的区别
 
 RabbitMQ中的经典镜像队列具有技术局限性，因此很难提供方便的故障处理。某些故障情况可能会导致镜像队列过早地确认消息，进而导致数据丢失。
 
-仲裁队列和其他类型队列的基本属性相似，客户端基本都能支持仲裁队列。
+[仲裁队列属性](#仲裁队列属性)和其他类型队列的公共属性相似，客户端基本都能支持仲裁队列。
 
 **相同点**：
 
@@ -273,24 +285,98 @@ RabbitMQ中的经典镜像队列具有技术局限性，因此很难提供方便
 - 声明；
 - 消费者设置`prefetch`;
 
-| 特点             | 经典镜像队列       | 仲裁队列                                               |
-|----------------|--------------|----------------------------------------------------|
-| 非持久化队列         | 支持 &#10004;  | 不支持 &#10006;                                       |
-| 独占队列           | 支持 &#10004;  | 不支持 &#10006;                                       |
-| 每条消息持久化        | 每条消息设置       | 总是 &#10004;                                        |
-| 成员关系变化         | 自动           | 手动                                                 |
-| 消息过期           | 支持 &#10004;  | 支持 &#10004;（3.10 +）                                |
-| 队列过期           | 支持 &#10004;  | 队列重新声明时过期时间不刷新                                     |
-| 队列长度限制         | 支持 &#10004;  | 支持 &#10004;（不支持`x-overflow`: `reject-publish-dlx`） |
-| 惰性队列           | 支持 &#10004;  | 总是  &#10004;（3.10 +）                               |
-| 消息优先级          | 支持 &#10004;  | 不支持 &#10006;                                       | 
-| 消费者优先级         | 支持 &#10004;  | 支持 &#10004;                                        |
-| 死信交换机          | 支持 &#10004;  | 支持 &#10004;                                        |
-| 策略             | 支持 &#10004;  | 支持 &#10004;（[仲裁队列策略](#仲裁队列策略)）                     |
-| 有毒消息处理         | 不支持 &#10006; | 支持 &#10004;                                        |
-| 全局QoS/prefetch | 支持 &#10004;  | 不支持 &#10006;                                       |
+| 特点                | 经典镜像队列       | 仲裁队列                                               |
+|-------------------|--------------|----------------------------------------------------|
+| 非持久化队列            | 支持 &#10004;  | 不支持 &#10006;                                       |
+| 独占队列              | 支持 &#10004;  | 不支持 &#10006;                                       |
+| 每条消息持久化           | 每条消息设置       | 总是 &#10004;                                        |
+| 成员关系变化            | 自动           | 手动                                                 |
+| 消息过期              | 支持 &#10004;  | 支持 &#10004;（3.10 +）                                |
+| 队列过期              | 支持 &#10004;  | 队列重新声明时过期时间不刷新                                     |
+| 队列长度限制            | 支持 &#10004;  | 支持 &#10004;（不支持`x-overflow`: `reject-publish-dlx`） |
+| 惰性队列              | 支持 &#10004;  | 总是  &#10004;（3.10 +）                               |
+| 消息优先级             | 支持 &#10004;  | 不支持 &#10006;                                       | 
+| 消费者优先级            | 支持 &#10004;  | 支持 &#10004;                                        |
+| [死信消息](#仲裁队列死信消息) | 支持 &#10004;  | 支持 &#10004;                                        |
+| 策略                | 支持 &#10004;  | 支持 &#10004;（[仲裁队列策略](#仲裁队列策略)）                     |
+| 有毒消息处理            | 不支持 &#10006; | 支持 &#10004;                                        |
+| 全局QoS/prefetch    | 支持 &#10004;  | 不支持 &#10006;                                       |
 
-### 经典队列迁移
+### 仲裁队列属性
+
+仲裁队列声明时，需要将队列属性设置为`x-queue-type = quorum`。
+
+#### 公共属性
+
+仲裁队列和经典队列的某些公共属性相同：
+
+- [x-expires](#x-expires)
+- [x-message-ttl](#x-message-ttl)
+- [x-single-active-consumer](#x-single-active-consumer)
+- [x-dead-letter-exchange](#x-dead-letter-exchange)：仲裁队列支持更可靠的[死信消息传递](#仲裁队列死信消息)。
+- [x-dead-letter-routing-key](#x-dead-letter-routing-key)
+- [x-max-length](#x-max-length)
+- [x-max-length-bytes](#x-max-length-bytes)
+- [x-overflow](#x-overflow)：仲裁队列的溢出行为不支持`reject-publish-dlx`。
+
+#### 不同属性
+
+##### x-delivery-limit
+
+允许的不成功传送尝试的次数(`Number`)。一旦消息发送失败次数超过此次数，该消息将被丢弃或成为死信，具体取决于队列配置。
+
+> 官网建议，最好通过策略`delivery-limit`配置，可批量修改、避免删除队列。
+
+##### x-quorum-initial-group-size
+
+队列初始化的节点数量(`Number`)。
+
+##### x-dead-letter-strategy
+
+死信消息发送策略。
+
+> 官网建议，最好通过策略`dead-letter-strategy`配置，可批量修改、避免删除队列。
+
+> 关于仲裁队列死信消息发送策略，可以查看[仲裁队列死信消息](#仲裁队列死信消息)一节。
+
+可取值（`String`）:
+
+- `at-most-once`：最多发送一次。默认为此值。
+- `at-least-once`：至少发送一次。若设置为该值，必须设置`x-overflow = reject-publish`。
+
+##### x-queue-leader-locator
+
+队列leader位置。
+
+可取值（`String`）：
+
+- `balanced`：选择托管相同队列类型、leader副本最少的节点；默认值；
+- `client-local`：选择客户端申明队列时，连接的节点。
+
+> 官网建议，最好通过策略`queue-leader-locator`配置，可批量修改、避免删除队列。
+
+### 仲裁队列死信消息
+
+仲裁队列支持更安全的死信消息，可以使用`at-least-once`保证”至少一次“的队列间死信消息的传输。仲裁队列将保留死信消息，直到内部消费者将死信消息发布到目标死信队列中。
+
+> 需要注意的是`at-least-once`会对转发性能有一定影响。
+
+仲裁队列的默认死信策略`dead-letter-strategy`依然是`at-most-once`。
+
+若需要开启死信消息`at-least-once`，需要更改以下队列策略（或是`x-`开头的队列属性）：
+
+- `dead-letter-strategy = at-least-once`，默认是`at-most-once`；
+- `overflow = reject-publish`，默认是`drop-head`；
+- 配置`dead-letter-exchange`, `dead-letter-routing-key`；
+- 启用[功能标志](#功能标志)`stream_queue`(对于3.9+版本默认开启)。
+
+### 副本管理
+
+通过`x-quorum-initial-group-size`设置副本数量，`x-queue-leader-locator`设置leader位置。
+
+当添加或删除节点时，都需要管理员**手动**将节点从仲裁队列成员中添加或删除。
+
+### 经典队列迁移到仲裁队列
 
 ### 仲裁队列策略
 
@@ -478,9 +564,7 @@ leader故障，镜像会被提升为leader：
 - 消费者在故障转移时的请求，会收到取消通知；
 - 镜像在提升为leader的过程中，生产者发布的消息不会丢失，客户端发布确认也会得到确认。因为消息的发布会发布到所有节点上，镜像提升为leader后，会同步所有节点的消息；
 
-如果消费者以`autoAck`（此处的RabbitMQ `autoAck`和spring-amqp中的`AcknowledgeMode.AUTO`
-不同，其为broker发出后自动ack，等于spring-amqp中的`AcknowledgeMode.NONE`
-）模式连接broker，那么消费者突然断开时，原leader发出的消息可能用户不会被消费者接收到，新的leader也无法将这些消息重新排队。
+如果消费者以`autoAck`（此处的RabbitMQ `autoAck`和spring-amqp中的`AcknowledgeMode.AUTO`不同，其为broker发出后自动ack，等于spring-amqp中的`AcknowledgeMode.NONE`）模式连接broker，那么消费者突然断开时，原leader发出的消息可能用户不会被消费者接收到，新的leader也无法将这些消息重新排队。
 
 ### 发布确认和事务
 
@@ -667,4 +751,43 @@ x 参数，并通过更新策略定义一次更新它们。
 
 “**活跃消费者**”是指无需等待即可接收消息的消费者。阻塞的消费者可能是因为`qos`或者网络不稳定。
 
+# 功能标志
 
+[Feature Flags](https://www.rabbitmq.com/feature-flags.html)
+在混合版本集群中，功能标志（feature flags）是一种控制哪些功能在所有节点上都可用的机制。
+
+可以滚动升级集群中的节点，升级完后，应当开启所有功能标志。但是不保证RabbitMQ所有的新版本都能兼容旧版本中的功能标志，所以可能需要在集群范围内关闭不支持的功能，才能升级。
+
+只有集群中所有节点都支持功能标志是，才能使用功能标志。
+
+只有满足以下条件，节点才能加入集群：
+
+- 节点支持集群中启用的所有功能标志；
+- 集群支持节点启用的所有功能标志
+
+**命令**：
+
+```shell
+# 查看feature flags
+[root@middleware2 ~]# rabbitmqctl list_feature_flags
+Listing feature flags ...
+name    state
+classic_mirrored_queue_version  enabled
+drop_unroutable_metric  enabled
+empty_basic_get_metric  enabled
+implicit_default_bindings       enabled
+maintenance_mode_status enabled
+quorum_queue    enabled
+stream_queue    enabled
+user_limits     enabled
+virtual_host_metadata   enabled
+
+# 启用feature flags
+rabbitmqctl enable_feature_flag <all | name>
+```
+
+# 确认机制
+
+[Consumer Acknowledgements and Publisher Confirms](https://www.rabbitmq.com/confirms.html)
+
+##   
