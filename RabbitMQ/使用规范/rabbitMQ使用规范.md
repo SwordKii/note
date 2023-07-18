@@ -132,10 +132,7 @@
 </table>
 
 
-
-
-
-<table align="center">
+<table>
     <caption>组件特点选择</caption>
     <tr>
         <th>组件</th>
