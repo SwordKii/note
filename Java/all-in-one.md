@@ -15,3 +15,7 @@
 
 分布式场景下，重新连接的时候，会导致连接的节点不一样，无法重新获取到原来的`Emitter`，需要考虑引入分布式数据库，重新创建`Emitter`；
 `Emitter`每次发送消息时，都需要从`Map`中重新获取，并处理前端断开连接的异常；
+
+# nginx
+
+[windows安装nginx](https://www.cnblogs.com/taiyonghai/p/9402734.html)
